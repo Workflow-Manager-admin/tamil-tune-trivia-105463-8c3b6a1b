@@ -58,24 +58,35 @@ async function fetchTamilMovies(page = 1) {
 }
 
 /**
- * Fetch *all* pages of Tamil movies up to maxPages (deepens coverage)
+ * Fetch *all* pages of Tamil movies up to maxPages (deepens coverage).
+ * Attempts to fetch as large a pool as allowed by TMDb (for quiz reliability).
+ * Improved error details for diagnosing catalog/coverage or API key issues.
  * @param {number} maxPages
  * @returns {Promise<Array>}
  */
-async function fetchAllTamilMovies(maxPages = 6) {
+async function fetchAllTamilMovies(maxPages = 12) {
   let all = [];
+  let lastErr = null;
   for (let p = 1; p <= maxPages; ++p) {
     let pageResults = [];
     try {
       pageResults = await fetchTamilMovies(p);
     } catch (e) {
-      // If a fetch fails, continue with those we already have
+      lastErr = e;
+      // Continue if a single page fails; break if it's due to authorization
+      if (e && (e.message?.includes("401") || e.message?.includes("Invalid"))) {
+        throw new Error("TMDb API authorization failed. Please check your API key/token in the .env file.");
+      }
       break;
     }
     if (!pageResults.length) break;
     all = all.concat(pageResults);
+    // TMDb API: If there's a fixed total_pages, avoid unnecessary requests by stopping early
+    if (p === 1 && pageResults.total_pages) {
+      maxPages = Math.min(maxPages, pageResults.total_pages);
+    }
   }
-  // Deduplicate by id/title
+  // Deduplicate by id/title and remove adults/missing
   const seen = new Set();
   all = all.filter((m) => {
     if (!m.id || !m.title) return false;
@@ -83,6 +94,9 @@ async function fetchAllTamilMovies(maxPages = 6) {
     seen.add(m.id);
     return !m.adult;
   });
+  if (!all.length && lastErr) {
+    throw lastErr;
+  }
   return all;
 }
 
@@ -122,19 +136,31 @@ async function fetchMovieCast(movieId) {
  * If error, throws with message.
  */
 async function fetchConnectionQuestions(rounds = 10) {
-  // Fetch more pages for better randomization/corpus
+  // Fetch extra pages for better randomization & quiz validity (larger pool)
   let allMovies = [];
+  let fetchErr = null;
   try {
-    allMovies = await fetchAllTamilMovies(6); // fetch 6 pages (usually ~20 per page)
+    allMovies = await fetchAllTamilMovies(12); // fetch up to 12 pages (~200+ movies)
   } catch (e) {
-    throw new Error("Could not load enough Tamil movies: " + (e?.message || ""));
+    fetchErr = e;
   }
-  allMovies = allMovies.filter((m) => m.id && m.title && !m.adult);
+  allMovies = Array.isArray(allMovies) ? allMovies.filter((m) => m.id && m.title && !m.adult) : [];
 
-  if (allMovies.length < rounds + 5)
-    throw new Error(
-      "Not enough Tamil movies found from TMDb – check API key or try again later."
-    );
+  if (allMovies.length < rounds + 5) {
+    let msg = "Not enough Tamil movies found from TMDb to create a playable game. ";
+    if (fetchErr) {
+      msg += "TMDb API error: " + fetchErr.message;
+    } else {
+      msg += "Possible reasons:\n";
+      msg += "- The TMDb API key/token is incorrect or missing in your .env file.\n";
+      msg += "- Network issues prevented contacting TMDb.\n";
+      msg += "- TMDb catalog coverage for Tamil cinema is incomplete.\n";
+      msg += "Tried to fetch at least " + (rounds+5) + " movies, but only found " + allMovies.length + ".\n";
+      msg += "If your API key is correct, you may need to wait and try again later, or help improve TMDb catalog data!\n";
+      msg += "Check the API documentation and .env setup as described in the README.";
+    }
+    throw new Error(msg);
+  }
 
   // Shuffle for randomness
   const shuffle = (arr) => arr.sort(() => Math.random() - 0.5);
@@ -187,10 +213,12 @@ async function fetchConnectionQuestions(rounds = 10) {
     });
   }
 
-  if (!questions.length)
-    throw new Error(
-      "Could not generate quiz – not enough movie/cast data from TMDb."
-    );
+  if (!questions.length) {
+    let msg = "Could not generate quiz – not enough movie/cast data from TMDb to create game rounds. ";
+    msg += "This may be due to TMDb API limits, insufficient Tamil movies in their database, or temporary server issues. ";
+    msg += "If you encounter this repeatedly, check your .env for TMDb API key correctness, your internet connection, or wait and try later.";
+    throw new Error(msg);
+  }
 
   return questions;
 }
