@@ -31,17 +31,18 @@ Open [http://localhost:3000](http://localhost:3000) to play in your browser.
    - Register/sign in at [TMDb](https://www.themoviedb.org/) and [request a v4 Read Access Token](https://www.themoviedb.org/settings/api).
    - The token is a long string starting with `eyJ...`.
 
-2. **Set Your API Token:**
+2. **Set Your API Token (Only v4 Read Access Token works):**
    - Create a `.env` file in the project root (same folder as `package.json`).
+   - **Must** be a v4 Read Access Token! It will look like `eyJ...` and **not** a 32-character hex string.
    - Add this line (replace with your token):
 
      ```
-     REACT_APP_TMDB_TOKEN=your_api_token_here
+     REACT_APP_TMDB_TOKEN=your_v4_read_access_token_here
      ```
 
    - Restart `npm start` after any `.env` change.
 
-_Note: The app won't work without a valid TMDb API key!_
+_Note: The app won't work without a valid **v4 Read Access Token** for TMDb! v3 keys (short hex) will cause errors/blank screens. Remove any hardcoded token in src/App.js - always use the .env._
 
 ---
 

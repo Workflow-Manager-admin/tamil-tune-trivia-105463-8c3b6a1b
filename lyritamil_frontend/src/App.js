@@ -28,20 +28,25 @@ import "./App.css";
  * otherwise tries .env, and shows clear errors.
  */
 
-// --- CONFIG: HARDCODED API KEY (replace with provided key!!) ---
-const HARDCODED_TMDB_TOKEN = "302e5ed4126dcd7baac8996101d80049"; // Provided by request
-
 /**
- * Returns the TMDb Bearer API key, using the provided constant if available
- * (which supersedes .env/environment), falling back as needed.
- * @returns {string} Bearer API token for TMDb
+ * PUBLIC_INTERFACE
+ * Returns the TMDb Bearer v4 API token from .env.
+ * If not present or in wrong format, throws with useful error.
+ * @returns {string} Bearer API v4 token for TMDb (starts with 'eyJ')
  */
 function getTMDbToken() {
-  // Use hardcoded whenever present AND non-empty
-  if (HARDCODED_TMDB_TOKEN && HARDCODED_TMDB_TOKEN.length > 10) return HARDCODED_TMDB_TOKEN;
-  if (process.env.REACT_APP_TMDB_TOKEN && process.env.REACT_APP_TMDB_TOKEN.length > 10)
-    return process.env.REACT_APP_TMDB_TOKEN;
-  return ""; // No usable token found
+  const token = process.env.REACT_APP_TMDB_TOKEN;
+  if (!token || token.length < 10) {
+    throw new Error("TMDb: No API key found. Please provide your TMDb v4 Read Access Token in the .env file as REACT_APP_TMDB_TOKEN. See the README.");
+  }
+  if (token.length === 32 && /^[a-f0-9]+$/i.test(token)) {
+    // likely a v3 API key
+    throw new Error("TMDb: Provided API key appears to be a v3 key (32 hex chars). This app requires a v4 Read Access Token. See README instructions.");
+  }
+  if (!token.startsWith("eyJ")) {
+    throw new Error("TMDb: The API token found does not look like a TMDb v4 Read Access Token. It should start with 'eyJ...'. Check your .env and acquire the correct token as per the README.");
+  }
+  return token;
 }
 
 const TMDB_API = "https://api.themoviedb.org/3";

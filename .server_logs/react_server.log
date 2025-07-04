@@ -6,9 +6,9 @@ Attempting to bind to HOST environment variable: 0.0.0.0
 If this was unintentional, check that you haven't mistakenly set it in your shell.
 Learn more here: https://cra.link/advanced-config
 
-(node:12144) [DEP_WEBPACK_DEV_SERVER_ON_AFTER_SETUP_MIDDLEWARE] DeprecationWarning: 'onAfterSetupMiddleware' option is deprecated. Please use the 'setupMiddlewares' option.
+(node:13896) [DEP_WEBPACK_DEV_SERVER_ON_AFTER_SETUP_MIDDLEWARE] DeprecationWarning: 'onAfterSetupMiddleware' option is deprecated. Please use the 'setupMiddlewares' option.
 (Use `node --trace-deprecation ...` to show where the warning was created)
-(node:12144) [DEP_WEBPACK_DEV_SERVER_ON_BEFORE_SETUP_MIDDLEWARE] DeprecationWarning: 'onBeforeSetupMiddleware' option is deprecated. Please use the 'setupMiddlewares' option.
+(node:13896) [DEP_WEBPACK_DEV_SERVER_ON_BEFORE_SETUP_MIDDLEWARE] DeprecationWarning: 'onBeforeSetupMiddleware' option is deprecated. Please use the 'setupMiddlewares' option.
 Starting the development server...
 
 Compiled successfully!
@@ -21,63 +21,6 @@ You can now view react-kavia in the browser.
 Note that the development build is not optimized.
 To create a production build, use npm run build.
 
-webpack compiled successfully
-Compiling...
-Failed to compile.
-
-[eslint] 
-src/App.js
-  Line 57:32:   'TMDB_TOKEN' is not defined  no-undef
-  Line 126:32:  'TMDB_TOKEN' is not defined  no-undef
-
-Search for the keywords to learn more about each error.
-WARNING in [eslint] 
-src/App.js
-  Line 39:10:  'getTMDbToken' is defined but never used  no-unused-vars
-
-ERROR in [eslint] 
-src/App.js
-  Line 57:32:   'TMDB_TOKEN' is not defined  no-undef
-  Line 126:32:  'TMDB_TOKEN' is not defined  no-undef
-
-Search for the keywords to learn more about each error.
-
-webpack compiled with 1 error and 1 warning
-Compiling...
-Failed to compile.
-
-[eslint] 
-src/App.js
-  Line 142:32:  'TMDB_TOKEN' is not defined  no-undef
-
-Search for the keywords to learn more about each error.
-ERROR in [eslint] 
-src/App.js
-  Line 142:32:  'TMDB_TOKEN' is not defined  no-undef
-
-Search for the keywords to learn more about each error.
-
-webpack compiled with 1 error
-Compiling...
-Failed to compile.
-
-[eslint] 
-src/App.js
-  Line 150:32:  'TMDB_TOKEN' is not defined  no-undef
-
-Search for the keywords to learn more about each error.
-ERROR in [eslint] 
-src/App.js
-  Line 150:32:  'TMDB_TOKEN' is not defined  no-undef
-
-Search for the keywords to learn more about each error.
-
-webpack compiled with 1 error
-Compiling...
-Compiled successfully!
-webpack compiled successfully
-Compiling...
-Compiled successfully!
 webpack compiled successfully
 Compiling...
 Compiled successfully!
