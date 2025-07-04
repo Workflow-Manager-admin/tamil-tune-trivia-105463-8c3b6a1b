@@ -22,12 +22,27 @@ import "./App.css";
  * All TMDb usage and endpoints referenced in comments below.
  * API Docs: https://developer.themoviedb.org/docs
  */
+/**
+ * --- TMDb API Helper Functions & Constants ---
+ * Always uses the provided TMDb API key if set,
+ * otherwise tries .env, and shows clear errors.
+ */
 
-// -- TMDb API Helper Functions & Constants --
+// --- CONFIG: HARDCODED API KEY (replace with provided key!!) ---
+const HARDCODED_TMDB_TOKEN = "302e5ed4126dcd7baac8996101d80049"; // Provided by request
 
-const TMDB_TOKEN =
-  process.env.REACT_APP_TMDB_TOKEN ||
-  ""; // Reads from real .env, never hardcoded
+/**
+ * Returns the TMDb Bearer API key, using the provided constant if available
+ * (which supersedes .env/environment), falling back as needed.
+ * @returns {string} Bearer API token for TMDb
+ */
+function getTMDbToken() {
+  // Use hardcoded whenever present AND non-empty
+  if (HARDCODED_TMDB_TOKEN && HARDCODED_TMDB_TOKEN.length > 10) return HARDCODED_TMDB_TOKEN;
+  if (process.env.REACT_APP_TMDB_TOKEN && process.env.REACT_APP_TMDB_TOKEN.length > 10)
+    return process.env.REACT_APP_TMDB_TOKEN;
+  return ""; // No usable token found
+}
 
 const TMDB_API = "https://api.themoviedb.org/3";
 
@@ -38,18 +53,34 @@ const TMDB_API = "https://api.themoviedb.org/3";
  */
 async function fetchTamilMovies(page = 1) {
   const url = `${TMDB_API}/discover/movie?with_original_language=ta&sort_by=popularity.desc&vote_count.gte=10&page=${page}`;
+  const token = getTMDbToken();
+  if (!token || token.length < 10) {
+    throw new Error(
+      "TMDb: No valid API key supplied. Please check the provided API key and .env file as described in the README."
+    );
+  }
   const headers = {
-    Authorization: "Bearer " + TMDB_TOKEN,
+    Authorization: "Bearer " + token,
     "Content-Type": "application/json;charset=utf-8",
   };
   try {
     const res = await fetch(url, { headers });
+    if (res.status === 401) {
+      throw new Error(
+        "TMDb: Authorization failed (401 Unauthorized). Please check your API key – make sure the key is present and valid."
+      );
+    }
     if (!res.ok)
       throw new Error(
         `TMDb: failed to fetch Tamil movies (status ${res.status} ${res.statusText})`
       );
     const data = await res.json();
-    return data.results || [];
+    if (!Array.isArray(data.results)) {
+      throw new Error(
+        "TMDb response malformed or not as expected. Check API key, endpoint, and TMDb service status."
+      );
+    }
+    return data.results;
   } catch (err) {
     throw new Error(
       "TMDb: Could not load Tamil movies. " + (err?.message || "")
@@ -73,23 +104,31 @@ async function fetchAllTamilMovies(maxPages = 12) {
       pageResults = await fetchTamilMovies(p);
     } catch (e) {
       lastErr = e;
-      // Continue if a single page fails; break if it's due to authorization
-      if (e && (e.message?.includes("401") || e.message?.includes("Invalid"))) {
-        throw new Error("TMDb API authorization failed. Please check your API key/token in the .env file.");
+      // If it's a config key error or 401, halt immediately
+      if (
+        e &&
+        (
+          e.message?.toLowerCase().includes("authorization") ||
+          e.message?.toLowerCase().includes("api key") ||
+          e.message?.includes("401")
+        )
+      ) {
+        throw new Error(
+          "TMDb API authorization failed (setup/config error). Please ensure your TMDb API key is correctly supplied in code or .env file as described in the README. " +
+            (e?.message || "")
+        );
       }
+      // Otherwise, let user know, but may allow partial fetch
       break;
     }
     if (!pageResults.length) break;
     all = all.concat(pageResults);
-    // TMDb API: If there's a fixed total_pages, avoid unnecessary requests by stopping early
-    if (p === 1 && pageResults.total_pages) {
-      maxPages = Math.min(maxPages, pageResults.total_pages);
-    }
+    // (Don't check total_pages; API data adds too many empty keys, keep maxPages logic)
   }
-  // Deduplicate by id/title and remove adults/missing
+  // Deduplicate by id/title, remove adults/missing
   const seen = new Set();
   all = all.filter((m) => {
-    if (!m.id || !m.title) return false;
+    if (!m?.id || !m?.title) return false;
     if (seen.has(m.id)) return false;
     seen.add(m.id);
     return !m.adult;
@@ -107,18 +146,34 @@ async function fetchAllTamilMovies(maxPages = 12) {
  */
 async function fetchMovieCast(movieId) {
   const url = `${TMDB_API}/movie/${movieId}/credits`;
+  const token = getTMDbToken();
+  if (!token || token.length < 10) {
+    throw new Error(
+      "TMDb: No valid API key supplied for cast lookup. Please check your API key setup."
+    );
+  }
   const headers = {
-    Authorization: "Bearer " + TMDB_TOKEN,
+    Authorization: "Bearer " + token,
     "Content-Type": "application/json;charset=utf-8",
   };
   try {
     const res = await fetch(url, { headers });
+    if (res.status === 401) {
+      throw new Error(
+        "TMDb: Authorization failed (401 Unauthorized) during cast fetch. API key likely invalid."
+      );
+    }
     if (!res.ok)
       throw new Error(
         `TMDb: failed to fetch cast for movie ${movieId} (status ${res.status})`
       );
     const data = await res.json();
-    return data.cast || [];
+    if (!Array.isArray(data.cast)) {
+      throw new Error(
+        "TMDb: received malformed cast data. Check API config and TMDb service status."
+      );
+    }
+    return data.cast;
   } catch (err) {
     throw new Error(
       `TMDb: Could not load cast for movie ${movieId}. ${
@@ -296,7 +351,10 @@ function TamilMovieConnectionsApp() {
       return (
         <div className="tmc-card">
           <h3>No questions available</h3>
-          <p>Sorry, could not load enough Tamil movie/cast data from TMDb.</p>
+          <p>
+            Sorry, could not load enough Tamil movie/cast data from TMDb.<br />
+            <b>Check that the supplied API key is correct.</b>
+          </p>
           <button className="tmc-btn" onClick={restartGame}>Retry</button>
         </div>
       );
@@ -322,7 +380,7 @@ function TamilMovieConnectionsApp() {
               Press <b>Next</b> to continue. Play all 10 rounds!
             </li>
             <li>
-              <b>If you see an error</b>, ensure your TMDb API token is set (see code comments).
+              <b>If you see an error</b>, ensure your TMDb API key is valid (in code or .env). Contact support if the problem persists.
             </li>
           </ol>
           <button className="tmc-btn tmc-accent" onClick={() => setAnswered(true)}>
