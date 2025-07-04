@@ -1,82 +1,69 @@
-# Lightweight React Template for KAVIA
+# Tamil Movie Connections Game
 
-This project provides a minimal React template with a clean, modern UI and minimal dependencies.
+A modern, minimal React web game where you guess the Tamil movie based on unique combinations of actors who co-starred together! Powered by the [TMDb API](https://www.themoviedb.org/).
 
-## Features
+---
 
-- **Lightweight**: No heavy UI frameworks - uses only vanilla CSS and React
-- **Modern UI**: Clean, responsive design with KAVIA brand styling
-- **Fast**: Minimal dependencies for quick loading times
-- **Simple**: Easy to understand and modify
+## 🎮 How to Play
 
-## Getting Started
+- You'll see **2 or 3 actor names** from a randomly chosen Tamil movie.
+- Your task is to **guess which movie features these actors together** from a list of choices.
+- Score a point for each correct guess. Play 10 rounds per session!
 
-In the project directory, you can run:
+---
 
-### `npm start`
+## 🚀 Getting Started
 
-Runs the app in development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+From the `lyritamil_frontend` directory:
 
-### `npm test`
-
-Launches the test runner in interactive watch mode.
-
-### `npm run build`
-
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
-
-## Customization
-
-### Colors
-
-The main brand colors are defined as CSS variables in `src/App.css`:
-
-```css
-:root {
-  --kavia-orange: #E87A41;
-  --kavia-dark: #1A1A1A;
-  --text-color: #ffffff;
-  --text-secondary: rgba(255, 255, 255, 0.7);
-  --border-color: rgba(255, 255, 255, 0.1);
-}
+```bash
+npm install
+npm start
 ```
 
-### Components
+Open [http://localhost:3000](http://localhost:3000) to play in your browser.
 
-This template uses pure HTML/CSS components instead of a UI framework. You can find component styles in `src/App.css`. 
+---
 
-Common components include:
-- Buttons (`.btn`, `.btn-large`)
-- Container (`.container`)
-- Navigation (`.navbar`)
-- Typography (`.title`, `.subtitle`, `.description`)
+## 🛠️ TMDb API Setup (Required!)
 
-## Learn More
+1. **Get a TMDb API Token:**
+   - Register/sign in at [TMDb](https://www.themoviedb.org/) and [request a v4 Read Access Token](https://www.themoviedb.org/settings/api).
+   - The token is a long string starting with `eyJ...`.
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+2. **Set Your API Token:**
+   - Create a `.env` file in the project root (same folder as `package.json`).
+   - Add this line (replace with your token):
 
-### Code Splitting
+     ```
+     REACT_APP_TMDB_TOKEN=your_api_token_here
+     ```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+   - Restart `npm start` after any `.env` change.
 
-### Analyzing the Bundle Size
+_Note: The app won't work without a valid TMDb API key!_
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+---
 
-### Making a Progressive Web App
+## ✨ Features
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+- **Minimal & Responsive:** Clean, mobile-first layout, fast loading.
+- **Modern UI:** Custom styling, soft palette, big/loud score/feedback.
+- **API-driven:** Loads latest/popular Tamil movies and their casts live from TMDb.
+- **Error Handling:** Clear messages for API setup/connection issues.
+- **No Lyrics:** This version has no lyric/game code — fully movies/actor-based.
 
-### Advanced Configuration
+---
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+## 📝 Customize & Extend
 
-### Deployment
+- Core logic lives in `src/App.js`.
+- All TMDb API usage documented in code comments.
+- Brand/design can be tweaked in `src/App.css`.
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+For more details, see [TMDb API Docs](https://developer.themoviedb.org/docs).
 
-### `npm run build` fails to minify
+---
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+## 🧑‍💻 Credits
+Created for Kollywood fans. Uses [The Movie Database (TMDb)](https://www.themoviedb.org/) APIs but is not endorsed/certified by TMDb.

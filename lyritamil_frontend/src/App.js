@@ -1,724 +1,328 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import "./App.css";
 
-/* Lyritamil Color Theme Constants */
-const THEME_COLORS = {
-  accent: "#FF4081",
-  primary: "#5D1049",
-  secondary: "#FFDDC1",
-  lightBg: "#fff"
-};
-
 /**
- * PUBLIC_INTERFACE
- * Simulated async fetch for lyric questions.
+ * Tamil Movie Connections Game
  * 
- * In production, replace `fetchQuestions()` with code that fetches from a real endpoint.
- * For integrating a real lyrics API, refer to the block below for example usage.
+ * This app fetches random Tamil movies and their casts from the TMDb API.
+ * For each round:
+ *   - Pick two or three actors from a random movie as a "combination"
+ *   - Present these actor names as a clue
+ *   - User guesses the movie from several choices (multiple choice), or can type in the answer
  * 
- * If you acquire access to a Tamil lyrics API (REST, GraphQL, or custom backend), invoke it here and return
- * data in the compatible format: {lyric, answer, choices, hint, musicDirector}
- * For now, this mimics a "network delay" and also errors for demonstration.
+ * === TMDb API Setup (Required) ===
+ * 1. Register for a free TMDb (https://www.themoviedb.org/) account and visit https://www.themoviedb.org/settings/api to request an API key.
+ * 2. Store the TMDb API Read Access Token (v4 auth, starts with 'eyJ...') in a `.env` file at the project root:
+ *    REACT_APP_TMDB_TOKEN=your_tmdb_bearer_token
+ * 3. The React app will read process.env.REACT_APP_TMDB_TOKEN at runtime.
+ *    You may also define it in the environment before `npm start`.
+ *
+ * For testing, you may hardcode the token below (remove before pushing anywhere public).
+ * 
+ * All TMDb usage and endpoints referenced in comments below.
+ * API Docs: https://developer.themoviedb.org/docs
  */
-async function fetchQuestionsSimulated() {
-  // For demonstration, a random chance of error or no data
-  await new Promise(res => setTimeout(res, 900)); // Simulate latency
-  const fail = Math.random() < 0.07;
-  if (fail) throw new Error("Unable to fetch lyric questions from server.");
-  // The sample dataset: update/add more, or swap for real API call later
-  return [
-    {
-      lyric: "My heart is a galloping horse, searching for you everywhere",
-      answer: "Vinnaithaandi Varuvaayaa",
-      choices: [
-        "Vinnaithaandi Varuvaayaa",
-        "Alaipayuthey",
-        "Roja",
-        "Anniyan"
-      ],
-      hint: "Actor: Silambarasan (Simbu)",
-      musicDirector: "A. R. Rahman"
-    },
-    {
-      lyric: "Why do you look away, when I come close to talk?",
-      answer: "O Kadhal Kanmani",
-      choices: [
-        "O Kadhal Kanmani",
-        "Enai Noki Paayum Thota",
-        "Thulladha Manamum Thullum",
-        "Mouna Ragam"
-      ],
-      hint: "Music Director: A. R. Rahman",
-      musicDirector: "A. R. Rahman"
-    },
-    {
-      lyric: "My life became poetry the day I met you",
-      answer: "Alaipayuthey",
-      choices: [
-        "Rhythm",
-        "Alaipayuthey",
-        "Jeans",
-        "Sillunu Oru Kadhal"
-      ],
-      hint: "Actor: Madhavan",
-      musicDirector: "A. R. Rahman"
-    }
-    // Add more sample questions or replace with real API result
-  ];
+
+// -- TMDb API Helper Functions & Constants --
+
+const TMDB_TOKEN =
+  process.env.REACT_APP_TMDB_TOKEN ||
+  ""; // <-- See instructions above for setting up your own TMDb API bearer token
+
+const TMDB_API = "https://api.themoviedb.org/3";
+
+// Search for recent/popular Tamil movies
+async function fetchTamilMovies(page = 1) {
+  // Query by: with_original_language=ta; sort by popularity/recency; vote count filter for quality
+  const url = `${TMDB_API}/discover/movie?with_original_language=ta&sort_by=popularity.desc&vote_count.gte=10&page=${page}`;
+  const headers = {
+    Authorization: "Bearer " + TMDB_TOKEN,
+    "Content-Type": "application/json;charset=utf-8",
+  };
+  const res = await fetch(url, { headers });
+  if (!res.ok) throw new Error("TMDb: failed to fetch Tamil movies");
+  const data = await res.json();
+  return data.results || [];
+}
+
+// Fetch full movie credits to get the cast list
+async function fetchMovieCast(movieId) {
+  const url = `${TMDB_API}/movie/${movieId}/credits`;
+  const headers = {
+    Authorization: "Bearer " + TMDB_TOKEN,
+    "Content-Type": "application/json;charset=utf-8",
+  };
+  const res = await fetch(url, { headers });
+  if (!res.ok) throw new Error("TMDb: failed to fetch cast for movie " + movieId);
+  const data = await res.json();
+  return data.cast || [];
 }
 
 /**
- * Example template (commented) for future real API integration:
- *
- * async function fetchQuestions() {
- *   const res = await fetch("https://api.example.com/tamil-lyrics");
- *   if (!res.ok) throw new Error("API Error fetching lyric data");
- *   const data = await res.json();
- *   // Transform data to shape: [{lyric, answer, choices, hint, musicDirector}]
- *   return data;
- * }
+ * PUBLIC_INTERFACE
+ * Loads a pool of random Tamil movies and their cast combinations,
+ * Prepares an array of questions in shape:
+ *    { actors: [name1, name2, ...], answer: movieTitle, choices: [movieTitle, ...] }
+ * If error, throws with message.
  */
-/**
- * Modes:
- *  - guess: Type the answer
- *  - choice: Multiple choice
- *  - timed: 60 seconds for as many as possible
- */
-const MODES = [
-  { key: "guess", label: "Guess The Song" },
-  { key: "choice", label: "Multiple Choice" },
-  { key: "timed", label: "60s Challenge" }
-];
+async function fetchConnectionQuestions(rounds = 10) {
+  // Fetch several pages for variety if needed
+  let allMovies = [];
+  for (let i = 1; i <= 2; ++i) {
+    const pageMovies = await fetchTamilMovies(i);
+    allMovies = allMovies.concat(pageMovies);
+  }
+  // Filter movies that have enough cast/popularity
+  allMovies = allMovies.filter(m => m.id && m.title && !m.adult);
+
+  // Shuffle and pick random sample for this session
+  const questions = [];
+  const usedMovieIds = new Set();
+
+  for (let k = 0; k < rounds; ++k) {
+    let tries = 0, movie;
+    do {
+      movie = allMovies[Math.floor(Math.random() * allMovies.length)];
+      tries++;
+    } while (usedMovieIds.has(movie?.id) && tries < 8);
+
+    if (!movie) continue;
+    usedMovieIds.add(movie.id);
+
+    // For current movie, get cast
+    let cast;
+    try {
+      cast = await fetchMovieCast(movie.id);
+    } catch (e) {
+      continue;
+    }
+    cast = cast.filter(p => !!p.name);
+
+    // Pick 2–3 random main actors (avoid directors/cameos)
+    let mainActors = cast.filter(c => c.known_for_department === "Acting");
+    if (mainActors.length < 2) continue;
+
+    // Shuffle and select 2 or 3 actors
+    mainActors = mainActors.sort(() => Math.random() - 0.5);
+    const nActors = Math.random() < 0.35 ? 3 : 2; // 2 or 3 actors
+    const actors = mainActors.slice(0, nActors).map(c => c.name);
+
+    // Choices: collect answer + 3 incorrect movie titles (different)
+    const incorrect = [];
+    while (incorrect.length < 3) {
+      const idx = Math.floor(Math.random() * allMovies.length);
+      const other = allMovies[idx];
+      if (other.id !== movie.id && !incorrect.some(c => c.id === other.id)) incorrect.push(other);
+    }
+    const choices = [movie.title, ...incorrect.map(m => m.title)].sort(() => Math.random() - 0.5);
+
+    questions.push({
+      actors,
+      answer: movie.title,
+      choices,
+      movie, // (for details: year, poster, id)
+    });
+  }
+  return questions;
+}
 
 /**
  * PUBLIC_INTERFACE
- * LyricGameApp is the main entry point for the Lyritamil game.
- * State is now driven by a dynamic lyrics question "API" provider,
- * and all logic is adapted for error/empty state and a live-data future.
+ * TamilMovieConnectionsApp: Main Game Component. 
+ * Handles loading questions, game round state, answer logic, and UI.
  */
-function LyricGameApp() {
-  // Core Gameplay State
-  const [gameMode, setGameMode] = useState("guess");
-  const [showInstructions, setShowInstructions] = useState(true);
-  const [userInput, setUserInput] = useState("");
-  const [score, setScore] = useState(0);
-  const [showHint, setShowHint] = useState(false);
-  const [correct, setCorrect] = useState(null);
-  const [answered, setAnswered] = useState(false);
-
-  // API-driven lyric questions and loading/error states
-  const [questions, setQuestions] = useState([]);
-  const [current, setCurrent] = useState(0);
+function TamilMovieConnectionsApp() {
+  // Game state
   const [loading, setLoading] = useState(true);
-  const [apiError, setApiError] = useState("");
-  const [noData, setNoData] = useState(false);
+  const [error, setError] = useState("");
+  const [questions, setQuestions] = useState([]);
+  const [index, setIndex] = useState(0);
+  const [answered, setAnswered] = useState(false);
+  const [result, setResult] = useState(null); // null/true/false per round
+  const [score, setScore] = useState(0);
 
-  // Timed mode state
-  const [timer, setTimer] = useState(60);
-  const [timedActive, setTimedActive] = useState(false);
-  const timerRef = useRef();
-
-  // On mount/load game data
+  // Fetch data on load
   useEffect(() => {
-    let isMounted = true;
+    let mounted = true;
     setLoading(true);
-    setApiError("");
-    setNoData(false);
-    // Fetch lyric questions using async provider (replace with real API later)
-    fetchQuestionsSimulated()
-      .then(data => {
-        if (!isMounted) return;
-        if (!Array.isArray(data) || data.length === 0) {
-          setNoData(true);
-          setQuestions([]);
-        } else {
-          setQuestions(data);
-          setCurrent(0);
-        }
+    setError("");
+    fetchConnectionQuestions(10)
+      .then(qs => {
+        if (!mounted) return;
+        setQuestions(qs);
+        setIndex(0);
+        setScore(0);
+        setAnswered(false);
+        setResult(null);
         setLoading(false);
       })
-      .catch(err => {
-        setApiError("Could not load questions. " + (err.message || ""));
+      .catch(e => {
+        setError("Could not load movie data. " + (e?.message || ""));
         setQuestions([]);
         setLoading(false);
       });
-    return () => { isMounted = false; };
+    return () => { mounted = false; };
   }, []);
 
-  // Effect: Timed mode countdown
-  useEffect(() => {
-    if (gameMode === "timed" && timedActive && timer > 0) {
-      timerRef.current = setTimeout(() => setTimer((t) => t - 1), 1000);
-    }
-    if (timer === 0) {
-      setTimedActive(false); // Stop on zero
-      setAnswered(true);
-    }
-    return () => clearTimeout(timerRef.current);
-  }, [timer, timedActive, gameMode]);
-
-  // Handler: Change mode (and restart/reload questions for scoring fairness)
-  // PUBLIC_INTERFACE
-  function handleModeSelect(modeKey) {
-    setGameMode(modeKey);
-    setShowInstructions(false);
-    setCurrent(0);
-    setScore(0);
-    setTimer(60);
-    setTimedActive(modeKey === "timed");
-    setUserInput("");
-    setCorrect(null);
-    setAnswered(false);
-    setShowHint(false);
-    // Optionally reload questions here if you want a new sample per game mode
-  }
-
-  // Handler: Submit answer
-  // PUBLIC_INTERFACE
-  function handleSubmit(answer = null) {
-    if (!questions.length) return;
-    let userAns = userInput.trim();
-    if (gameMode === "choice" && answer) userAns = answer;
-    const currQ = questions[current];
-    if (!currQ) return;
-    const isCorrect = userAns.toLowerCase() === currQ.answer.toLowerCase();
-    setCorrect(isCorrect);
-    if (isCorrect) setScore((s) => s + 1);
+  // Submission logic
+  function handleChoice(choice) {
+    if (answered) return;
+    const correct = questions[index].answer === choice;
+    setResult(correct);
     setAnswered(true);
-    if (gameMode === "timed" && isCorrect) {
-      setTimeout(() => {
-        handleNext();
-        setShowHint(false);
-        setUserInput("");
-      }, 1200);
-    }
+    if (correct) setScore(s => s + 1);
   }
-
-  // Handler: Next question
-  // PUBLIC_INTERFACE
   function handleNext() {
-    if (!questions.length) return;
-    if (current < questions.length - 1) {
-      setCurrent((idx) => idx + 1);
-      setUserInput("");
-      setShowHint(false);
-      setCorrect(null);
-      setAnswered(false);
-    } else if (gameMode === "timed") {
-      setCurrent((idx) => (idx + 1) % questions.length); // Rotate for timed
-      setUserInput("");
-      setShowHint(false);
-      setCorrect(null);
-      setAnswered(false);
-    } else {
-      setAnswered(true); // End reached
-    }
-  }
-
-  // Handler: Start/restart timed mode
-  // PUBLIC_INTERFACE
-  function startTimedChallenge() {
-    setGameMode("timed");
-    setShowInstructions(false);
-    setCurrent(0);
-    setScore(0);
-    setTimer(60);
-    setTimedActive(true);
-    setUserInput("");
-    setCorrect(null);
+    setIndex(idx => idx + 1);
     setAnswered(false);
-    setShowHint(false);
+    setResult(null);
+  }
+  function restartGame() {
+    window.location.reload();
   }
 
-  // Handler: Show instructions
-  // PUBLIC_INTERFACE
-  function handleShowInstructions() {
-    setShowInstructions(true);
-    setTimedActive(false);
-  }
-
-  // Layout: Central game container
-  const cardStyle = {
-    background: THEME_COLORS.secondary,
-    boxShadow: "0 2px 16px #0001",
-    borderRadius: "18px",
-    maxWidth: 480,
-    margin: "2rem auto",
-    padding: "2.2rem 2rem",
-    textAlign: "center",
-    color: THEME_COLORS.primary,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    minHeight: 360
-  };
-  const floatingHintStyle = {
-    position: "fixed",
-    right: "20px",
-    bottom: "70px",
-    zIndex: 15,
-    background: THEME_COLORS.accent,
-    color: "#fff",
-    border: "none",
-    borderRadius: "50%",
-    fontSize: "2rem",
-    width: "56px",
-    height: "56px",
-    boxShadow: "0 2px 12px rgba(0,0,0,0.13)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    cursor: "pointer",
-    transition: "background 0.18s"
-  };
-  const modeSwitcherStyle = {
-    display: "flex",
-    gap: "10px",
-    justifyContent: "center",
-    margin: "1.2rem 0 0.8rem 0"
-  };
-  const wrapperStyle = {
-    minHeight: "100vh",
-    background: THEME_COLORS.lightBg,
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "flex-start"
-  };
-  const scorebarStyle = {
-    width: "100%",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: ".6rem",
-    padding: "0 1.2rem 0 1.2rem",
-    fontWeight: 600,
-    fontSize: "1.17rem"
-  };
-  const lyricFont = {
-    fontSize: "1.32rem",
-    margin: "1.5rem 0 1.2rem 0",
-    lineHeight: 1.5,
-    color: THEME_COLORS.primary,
-    fontWeight: 700
-  };
-
-  // Render a message for API error or loading/empty state
-  function renderLoadErrorOrEmpty() {
-    if (loading) return <div style={{ textAlign: "center", margin: "3rem auto" }}><h3>Loading questions…</h3></div>;
-    if (apiError) return (
-      <div style={{ ...cardStyle, color: "#d32f2f" }}>
-        <h3>Unable to load lyric questions.</h3>
-        <div style={{ fontSize: "1.13rem", marginTop: "1.1rem" }}>{apiError}</div>
-        <button
-          style={{
-            marginTop: "1.6em",
-            background: THEME_COLORS.primary,
-            color: "#fff",
-            padding: ".65em 2em",
-            border: "none",
-            borderRadius: "8px",
-            fontWeight: 600,
-            fontSize: "1.02rem"
-          }}
-          onClick={() => window.location.reload()}
-        >Retry</button>
-      </div>
-    );
-    if (noData || !questions.length) return (
-      <div style={cardStyle}>
-        <h3>No lyric questions found from data source.</h3>
-        <p>
-          No data available at this time.<br />
-          <span style={{ fontStyle: "italic", fontSize: ".91em" }}>
-            (For developers: provide a dataset in <b>fetchQuestionsSimulated()</b> or swap with a real API endpoint.)
-          </span>
-        </p>
-      </div>
-    );
-    return null;
-  }
-
-  // PUBLIC_INTERFACE
-  function renderGameCard() {
-    if (loading || apiError || noData || !questions.length) {
-      return renderLoadErrorOrEmpty();
+  // UI: Card Component
+  function renderCard() {
+    if (loading) {
+      return <div className="tmc-card"><h3>Loading game…</h3></div>;
     }
-    const q = questions[current];
-    if (!q) return <h3>Loading…</h3>;
-    return (
-      <div style={cardStyle}>
-        <div style={lyricFont} data-testid="lyric">{`"${q.lyric}"`}</div>
-        {(gameMode === "guess" || (gameMode === "timed" && !answered)) && (
-          <form
-            style={{ width: "100%" }}
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!answered) handleSubmit();
-            }}
-          >
-            <input
-              type="text"
-              value={userInput}
-              onChange={(e) => setUserInput(e.target.value)}
-              placeholder="Type movie/song name..."
-              style={{
-                width: "100%",
-                padding: "0.9em 1em",
-                fontSize: "1.08rem",
-                borderRadius: "9px",
-                border: `1.5px solid ${THEME_COLORS.primary}`,
-                marginBottom: "1rem",
-                outline: "none"
-              }}
-              disabled={answered || (gameMode === "timed" && !timedActive)}
-              autoFocus
-              aria-label="Type your answer"
-            />
-            <button
-              type="submit"
-              style={{
-                background: THEME_COLORS.accent,
-                color: "#fff",
-                padding: ".7em 2.1em",
-                border: "none",
-                borderRadius: "6px",
-                fontWeight: 600,
-                fontSize: "1rem",
-                cursor: answered ? "not-allowed" : "pointer",
-                marginTop: "0.3em"
-              }}
-              disabled={answered || (gameMode === "timed" && !timedActive)}
-            >
-              Submit
-            </button>
-          </form>
-        )}
-
-        {gameMode === "choice" && (
-          <div style={{
-            width: "100%",
-            display: "flex",
-            flexDirection: "column",
-            gap: ".75em",
-            margin: "1em 0"
-          }}>
-            {q.choices.map((opt, idx) => (
-              <button
-                key={opt}
-                style={{
-                  background: answered
-                    ? (opt === q.answer
-                      ? THEME_COLORS.accent
-                      : "#f2f2f2")
-                    : "#fff",
-                  color: answered
-                    ? (opt === q.answer
-                      ? "#fff"
-                      : THEME_COLORS.primary)
-                    : THEME_COLORS.primary,
-                  fontWeight: 600,
-                  fontSize: "1.02rem",
-                  borderRadius: "8px",
-                  border: `1.5px solid ${THEME_COLORS.primary}`,
-                  padding: "0.87em .5em",
-                  cursor: answered ? "not-allowed" : "pointer",
-                  transition: "background 0.17s"
-                }}
-                onClick={() => {
-                  if (!answered) handleSubmit(opt);
-                }}
-                disabled={answered}
-                aria-label={`Choose answer ${idx + 1}: ${opt}`}
-                data-testid={`opt-${idx}`}
-              >
-                {opt}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Show feedback */}
-        {answered && (
-          <div
-            style={{
-              marginTop: "1.18rem",
-              fontWeight: 700,
-              fontSize: "1.13rem",
-              color: correct
-                ? THEME_COLORS.accent
-                : "#d32f2f",
-              letterSpacing: ".04em"
-            }}
-          >
-            {correct === null
-              ? (timer === 0 ? "Time's up!" : "")
-              : correct
-              ? "Correct!"
-              : (
-                <>
-                  Incorrect.
-                  <span style={{ display: "block", color: THEME_COLORS.primary, marginTop: 5, fontWeight: 500, fontSize: ".97rem" }}>
-                    Answer: <b>{q.answer}</b>
-                  </span>
-                </>
-              )
-            }
-          </div>
-        )}
-
-        {/* Next button */}
-        {answered && (gameMode !== "timed" || timer === 0) && (
-          <button
-            style={{
-              marginTop: "1.75em",
-              background: THEME_COLORS.primary,
-              color: "#fff",
-              padding: ".68em 2em",
-              border: "none",
-              borderRadius: "8px",
-              fontWeight: 600,
-              fontSize: "1.02rem",
-              cursor: "pointer"
-            }}
-            onClick={() => {
-              handleNext();
-              setShowHint(false);
-              setUserInput("");
-              setCorrect(null);
-              setAnswered(false);
-            }}
-          >
-            {current === questions.length - 1 && gameMode !== "timed" ? "Finish" : "Next"}
+    if (error) {
+      return (
+        <div className="tmc-card tmc-error">
+          <h3>Error</h3>
+          <div>{error}</div>
+          <button className="tmc-btn" onClick={restartGame}>Retry</button>
+        </div>
+      );
+    }
+    if (!questions.length) {
+      return (
+        <div className="tmc-card">
+          <h3>No questions available</h3>
+          <p>Sorry, could not load enough Tamil movie/cast data from TMDb.</p>
+          <button className="tmc-btn" onClick={restartGame}>Retry</button>
+        </div>
+      );
+    }
+    // Instructions view
+    if (index === 0 && !answered) {
+      return (
+        <div className="tmc-card" style={{ alignItems: "flex-start" }}>
+          <h2 style={{ fontWeight: 800, marginBottom: 12 }}>
+            🎬 Tamil Movie Connections — Instructions
+          </h2>
+          <ol style={{ fontSize: "1.07rem", margin: "1em 0 1.5em 1.3em", padding: 0, lineHeight: 1.5 }}>
+            <li>
+              You’ll be shown <b>2 or 3 Tamil actor names</b> who starred in the same movie.
+            </li>
+            <li>
+              Guess which <b>movie connects</b> these actors from the options below.
+            </li>
+            <li>
+              Tap your answer. <b>Score 1 point</b> for each correct guess.
+            </li>
+            <li>
+              Press <b>Next</b> to continue. Play all 10 rounds!
+            </li>
+            <li>
+              <b>If you see an error</b>, ensure your TMDb API token is set (see code comments).
+            </li>
+          </ol>
+          <button className="tmc-btn tmc-accent" onClick={() => setAnswered(true)}>
+            Start Game!
           </button>
+        </div>
+      );
+    }
+
+    const q = questions[index];
+    if (!q) return <div className="tmc-card"><h3>All done!</h3></div>;
+    return (
+      <div className="tmc-card">
+        <div className="tmc-q-title">Which movie had these actors together?</div>
+        <div className="tmc-cast-list">
+          {q.actors.map(a => (
+            <span className="tmc-cast-actor" key={a}>{a}</span>
+          ))}
+        </div>
+        {q.movie.release_date && (
+          <div className="tmc-q-year">Year: {new Date(q.movie.release_date).getFullYear()}</div>
         )}
 
-        {/* Hint popup */}
-        {showHint && (
-          <div
-            style={{
-              marginTop: ".9em",
-              background: THEME_COLORS.primary,
-              color: "#fff",
-              padding: "0.55em 1.4em",
-              borderRadius: "10px",
-              fontWeight: 500,
-              fontSize: ".98em",
-              boxShadow: "0 2px 10px rgba(0,0,0,0.14)",
-              display: "inline-block"
-            }}
-            data-testid="hint-box"
-          >
-            {q.hint}
-            {q.musicDirector && (
-              <span style={{ display: "block", color: THEME_COLORS.secondary, fontSize: ".94em" }}>
-                Music: {q.musicDirector}
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // PUBLIC_INTERFACE
-  function renderHintButton() {
-    if (!questions[current]) return null;
-    if (loading || apiError || noData) return null;
-    return (
-      <button
-        style={floatingHintStyle}
-        aria-label="Show hint"
-        title="Show Hint"
-        onClick={() => setShowHint((v) => !v)}
-        tabIndex={0}
-      >
-        ?
-      </button>
-    );
-  }
-
-  // PUBLIC_INTERFACE
-  function renderModeSwitcher() {
-    return (
-      <div style={modeSwitcherStyle}>
-        {MODES.map((m) => (
-          <button
-            key={m.key}
-            style={{
-              background: gameMode === m.key ? THEME_COLORS.primary : "#fff",
-              color: gameMode === m.key ? "#fff" : THEME_COLORS.primary,
-              border: `2px solid ${THEME_COLORS.primary}`,
-              borderRadius: "24px",
-              padding: "0.64em 1.34em",
-              fontSize: "0.96em",
-              fontWeight: 600,
-              marginRight: 4,
-              cursor: "pointer",
-              opacity: showInstructions ? 0.8 : 1,
-              transition: "all 0.18s"
-            }}
-            onClick={() => handleModeSelect(m.key)}
-            aria-current={gameMode === m.key}
-          >
-            {m.label}
-          </button>
-        ))}
-        <button
-          onClick={handleShowInstructions}
-          style={{
-            background: "#fff",
-            color: THEME_COLORS.accent,
-            border: `2px solid ${THEME_COLORS.accent}`,
-            borderRadius: "18px",
-            padding: "0.55em 1em",
-            fontSize: ".95em",
-            marginLeft: 5,
-            fontWeight: 700,
-            cursor: "pointer"
-          }}
-          aria-label="Show instructions"
-        >?</button>
-      </div>
-    );
-  }
-
-  // PUBLIC_INTERFACE
-  function renderScoreBar() {
-    return (
-      <div style={scorebarStyle}>
-        <span>
-          Score:&nbsp;
-          <span style={{
-            color: THEME_COLORS.accent,
-            fontWeight: 800,
-            fontSize: "1.18em"
-          }}>{score}</span>
-        </span>
-        {gameMode === "timed" && (
-          <span style={{
-            color: timer < 10 ? "#d32f2f" : THEME_COLORS.primary,
-            fontWeight: 800,
-            letterSpacing: "0.04em"
-          }}>
-            ⏱&nbsp;{timer}s
-          </span>
-        )}
-      </div>
-    );
-  }
-
-  // PUBLIC_INTERFACE
-  function renderInstructions() {
-    return (
-      <div style={{
-        ...cardStyle,
-        maxWidth: 520,
-        background: "#fff",
-        alignItems: "flex-start",
-        color: THEME_COLORS.primary,
-        boxShadow: "0 2px 18px #0000"
-      }}>
-        <h2 style={{ fontWeight: 800, color: THEME_COLORS.primary, fontSize: "2rem", marginBottom: ".55em" }}>
-          🎶 LyriTamil - How to Play
-        </h2>
-        <ol style={{ fontSize: "1.1rem", margin: "0.7em 0 1.5em 1em", padding: 0, color: THEME_COLORS.primary, lineHeight: 1.57 }}>
-          <li>
-            <b>Choose a Mode:</b>
-            <ul style={{ margin: "0.3em 0 0.4em 1em", fontSize: ".96em" }}>
-              <li><b>Guess The Song:</b> Type your answer for each lyric.</li>
-              <li><b>Multiple Choice:</b> Pick from four options.</li>
-              <li><b>60s Challenge:</b> Answer as many as you can in 60 seconds!</li>
-            </ul>
-          </li>
-          <li>
-            <b>Read the translated lyric</b> shown in English.
-          </li>
-          <li>
-            <b>Guess the Tamil movie or song</b> by typing or selecting the answer.
-          </li>
-          <li>
-            <b>Use the ? Hint</b> for actor or music director clue.
-          </li>
-          <li>
-            <b>Track your score</b> at the top, and try to top your best!
-          </li>
-        </ol>
-        <div style={{
-          width: "100%",
-          display: "flex",
-          gap: "10px",
-          justifyContent: "center"
-        }}>
-          {MODES.map((m) => (
+        <div className="tmc-choices">
+          {q.choices.map(ch => (
             <button
-              key={m.key}
-              onClick={() => handleModeSelect(m.key)}
-              style={{
-                background: THEME_COLORS.primary,
-                color: "#fff",
-                borderRadius: "10px",
-                border: "none",
-                fontWeight: 700,
-                fontSize: "1.01em",
-                padding: ".7em 1.7em",
-                marginBottom: ".2em",
-                cursor: "pointer"
-              }}
+              key={ch}
+              className={
+                "tmc-choice-btn" +
+                (answered
+                  ? ch === q.answer
+                    ? " tmc-choice-correct"
+                    : ch === q.choices.find((c) => c === ch) && ch === q.choices.find((c) => c === ch) && result === false
+                      && ch === q.choices.find((c) => c === ch) ? " tmc-choice-selected" : ""
+                  : "")
+              }
+              disabled={answered}
+              onClick={() => handleChoice(ch)}
+              aria-label={`Choose answer: ${ch}`}
+              tabIndex={0}
             >
-              {m.label}
+              {ch}
             </button>
           ))}
         </div>
-        <p style={{ marginTop: "2em", color: "#755D71", fontSize: ".97em" }}>
-          <b>Note:</b> Data is loaded from a local sample. To plug in a real API for lyrics, edit <code>fetchQuestionsSimulated()</code> in App.js.
-        </p>
+
+        {answered && (
+          <div className="tmc-feedback" style={{ marginTop: 20, fontWeight: 600 }}>
+            {result === true ? (
+              <span style={{ color: "#27bb7f" }}>Correct! 🎉</span>
+            ) : (
+              <>
+                <span style={{ color: "#d32f2f" }}>Incorrect!</span>
+                <span style={{ display: "block", color: "#555", marginTop: 4 }}>
+                  Answer: <b>{q.answer}</b>
+                </span>
+              </>
+            )}
+          </div>
+        )}
+
+        <div style={{ marginTop: answered ? 18 : 32 }}>
+          {index < questions.length - 1 && answered && (
+            <button className="tmc-btn" onClick={handleNext}>Next</button>
+          )}
+          {index === questions.length - 1 && answered && (
+            <button className="tmc-btn" onClick={restartGame}>Play Again</button>
+          )}
+        </div>
       </div>
     );
   }
 
+  // Game UI
   return (
-    <div style={wrapperStyle}>
-      {/* Game header top bar */}
-      <header style={{
-        width: "100%",
-        background: THEME_COLORS.primary,
-        color: "#fff",
-        padding: "1.2rem 0",
-        fontWeight: 800,
-        fontSize: "2rem",
-        letterSpacing: ".01em",
-        textAlign: "center",
-        position: "sticky",
-        top: 0,
-        zIndex: 6,
-        boxShadow: "0 0.5px 8px #0002"
-      }}>
-        LyriTamil
+    <div className="App" data-theme="light">
+      {/* Header */}
+      <header className="tmc-header">
+        Tamil Movie Connections
       </header>
-
-      {renderModeSwitcher()}
-
-      {renderScoreBar()}
-
+      {/* Score bar */}
+      <div className="tmc-score-bar">
+        <span>
+          Score: <b>{score}</b>
+        </span>
+        <span>Round: <b>{Math.min(index + 1, questions.length)}</b> / {questions.length || 10}</span>
+      </div>
+      {/* Main game UI */}
       <main style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-start" }}>
-        {showInstructions ? renderInstructions() : renderGameCard()}
+        {renderCard()}
       </main>
-
-      {!showInstructions && renderHintButton()}
-
-      {/* Modern minimalistic footer */}
-      <footer style={{
-        width: "100%",
-        textAlign: "center",
-        fontSize: ".98rem",
-        fontWeight: 500,
-        margin: "2.5rem 0 1rem 0",
-        color: "#4d1257a0"
-      }}>
-        Made with <span style={{ color: THEME_COLORS.accent }}>❤</span> for Tamil music fans.
+      {/* Footer */}
+      <footer className="tmc-footer">
+        Made with <span style={{ color: "#c0392b" }}>❤</span> for Kollywood fans. | Data via <a href="https://www.themoviedb.org/" style={{ color: "#2186ee" }}>TMDb</a>
       </footer>
     </div>
   );
 }
 
-export default LyricGameApp;
+export default TamilMovieConnectionsApp;

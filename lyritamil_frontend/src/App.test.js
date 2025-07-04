@@ -1,8 +1,5 @@
-import { render, screen } from '@testing-library/react';
-import App from './App';
-
-test('renders learn react link', () => {
-  render(<App />);
-  const linkElement = screen.getByText(/learn react/i);
-  expect(linkElement).toBeInTheDocument();
-});
+/**
+ * Tamil Movie Connections Game - Tests
+ *
+ * TODO: Add tests for new game flow. The lyric quiz tests are removed as they're no longer relevant.
+ */

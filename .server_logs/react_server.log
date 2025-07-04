@@ -25,3 +25,12 @@ src/App.js
   Line 220:12:  'startTimedChallenge' is defined but never used  no-unused-vars
 
 webpack compiled with 1 warning
+Compiling...
+Compiled successfully!
+webpack compiled successfully
+Compiling...
+Compiled successfully!
+webpack compiled successfully
+Compiling...
+Compiled successfully!
+webpack compiled successfully
