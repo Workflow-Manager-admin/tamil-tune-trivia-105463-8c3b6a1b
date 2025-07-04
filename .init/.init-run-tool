@@ -1,0 +1,4 @@
+{
+    "command": "PORT=<port> HOST=<host> BROWSER=none npm start",
+    "working_directory": "/home/kavia/workspace/code-generation/tamil-tune-trivia-105463-8c3b6a1b/lyritamil_frontend"
+}
