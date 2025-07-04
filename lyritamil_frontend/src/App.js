@@ -3,53 +3,81 @@ import "./App.css";
 
 /* Lyritamil Color Theme Constants */
 const THEME_COLORS = {
-  accent: "#FF4081",     // Vibrant pink
-  primary: "#5D1049",    // Deep purple
-  secondary: "#FFDDC1",  // Peachy tan
+  accent: "#FF4081",
+  primary: "#5D1049",
+  secondary: "#FFDDC1",
   lightBg: "#fff"
 };
 
-/* Demo Lyric Data */
-const DEMO_QUESTIONS = [
-  {
-    lyric: "My heart is a galloping horse, searching for you everywhere", // English translation
-    answer: "Vinnaithaandi Varuvaayaa",
-    choices: [
-      "Vinnaithaandi Varuvaayaa",
-      "Alaipayuthey",
-      "Roja",
-      "Anniyan"
-    ],
-    hint: "Actor: Silambarasan (Simbu)",
-    musicDirector: "A. R. Rahman"
-  },
-  {
-    lyric: "Why do you look away, when I come close to talk?",
-    answer: "O Kadhal Kanmani",
-    choices: [
-      "O Kadhal Kanmani",
-      "Enai Noki Paayum Thota",
-      "Thulladha Manamum Thullum",
-      "Mouna Ragam"
-    ],
-    hint: "Music Director: A. R. Rahman",
-    musicDirector: "A. R. Rahman"
-  },
-  {
-    lyric: "My life became poetry the day I met you",
-    answer: "Alaipayuthey",
-    choices: [
-      "Rhythm",
-      "Alaipayuthey",
-      "Jeans",
-      "Sillunu Oru Kadhal"
-    ],
-    hint: "Actor: Madhavan",
-    musicDirector: "A. R. Rahman"
-  }
-  // ... more questions could be loaded here
-];
+/**
+ * PUBLIC_INTERFACE
+ * Simulated async fetch for lyric questions.
+ * 
+ * In production, replace `fetchQuestions()` with code that fetches from a real endpoint.
+ * For integrating a real lyrics API, refer to the block below for example usage.
+ * 
+ * If you acquire access to a Tamil lyrics API (REST, GraphQL, or custom backend), invoke it here and return
+ * data in the compatible format: {lyric, answer, choices, hint, musicDirector}
+ * For now, this mimics a "network delay" and also errors for demonstration.
+ */
+async function fetchQuestionsSimulated() {
+  // For demonstration, a random chance of error or no data
+  await new Promise(res => setTimeout(res, 900)); // Simulate latency
+  const fail = Math.random() < 0.07;
+  if (fail) throw new Error("Unable to fetch lyric questions from server.");
+  // The sample dataset: update/add more, or swap for real API call later
+  return [
+    {
+      lyric: "My heart is a galloping horse, searching for you everywhere",
+      answer: "Vinnaithaandi Varuvaayaa",
+      choices: [
+        "Vinnaithaandi Varuvaayaa",
+        "Alaipayuthey",
+        "Roja",
+        "Anniyan"
+      ],
+      hint: "Actor: Silambarasan (Simbu)",
+      musicDirector: "A. R. Rahman"
+    },
+    {
+      lyric: "Why do you look away, when I come close to talk?",
+      answer: "O Kadhal Kanmani",
+      choices: [
+        "O Kadhal Kanmani",
+        "Enai Noki Paayum Thota",
+        "Thulladha Manamum Thullum",
+        "Mouna Ragam"
+      ],
+      hint: "Music Director: A. R. Rahman",
+      musicDirector: "A. R. Rahman"
+    },
+    {
+      lyric: "My life became poetry the day I met you",
+      answer: "Alaipayuthey",
+      choices: [
+        "Rhythm",
+        "Alaipayuthey",
+        "Jeans",
+        "Sillunu Oru Kadhal"
+      ],
+      hint: "Actor: Madhavan",
+      musicDirector: "A. R. Rahman"
+    }
+    // Add more sample questions or replace with real API result
+  ];
+}
 
+/**
+ * Example template (commented) for future real API integration:
+ *
+ * async function fetchQuestions() {
+ *   const res = await fetch("https://api.example.com/tamil-lyrics");
+ *   if (!res.ok) throw new Error("API Error fetching lyric data");
+ *   const data = await res.json();
+ *   // Transform data to shape: [{lyric, answer, choices, hint, musicDirector}]
+ *   return data;
+ * }
+ */
 /**
  * Modes:
  *  - guess: Type the answer
@@ -62,43 +90,60 @@ const MODES = [
   { key: "timed", label: "60s Challenge" }
 ];
 
-// PUBLIC_INTERFACE
+/**
+ * PUBLIC_INTERFACE
+ * LyricGameApp is the main entry point for the Lyritamil game.
+ * State is now driven by a dynamic lyrics question "API" provider,
+ * and all logic is adapted for error/empty state and a live-data future.
+ */
 function LyricGameApp() {
   // Core Gameplay State
   const [gameMode, setGameMode] = useState("guess");
   const [showInstructions, setShowInstructions] = useState(true);
-  const [current, setCurrent] = useState(0);
   const [userInput, setUserInput] = useState("");
   const [score, setScore] = useState(0);
   const [showHint, setShowHint] = useState(false);
-  const [correct, setCorrect] = useState(null); // null/true/false
+  const [correct, setCorrect] = useState(null);
   const [answered, setAnswered] = useState(false);
+
+  // API-driven lyric questions and loading/error states
+  const [questions, setQuestions] = useState([]);
+  const [current, setCurrent] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [apiError, setApiError] = useState("");
+  const [noData, setNoData] = useState(false);
 
   // Timed mode state
   const [timer, setTimer] = useState(60);
   const [timedActive, setTimedActive] = useState(false);
   const timerRef = useRef();
 
-  // For responsive hint button position
-  const floatingHintStyle = {
-    position: "fixed",
-    right: "20px",
-    bottom: "70px",
-    zIndex: 15,
-    background: THEME_COLORS.accent,
-    color: "#fff",
-    border: "none",
-    borderRadius: "50%",
-    fontSize: "2rem",
-    width: "56px",
-    height: "56px",
-    boxShadow: "0 2px 12px rgba(0,0,0,0.13)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    cursor: "pointer",
-    transition: "background 0.18s"
-  };
+  // On mount/load game data
+  useEffect(() => {
+    let isMounted = true;
+    setLoading(true);
+    setApiError("");
+    setNoData(false);
+    // Fetch lyric questions using async provider (replace with real API later)
+    fetchQuestionsSimulated()
+      .then(data => {
+        if (!isMounted) return;
+        if (!Array.isArray(data) || data.length === 0) {
+          setNoData(true);
+          setQuestions([]);
+        } else {
+          setQuestions(data);
+          setCurrent(0);
+        }
+        setLoading(false);
+      })
+      .catch(err => {
+        setApiError("Could not load questions. " + (err.message || ""));
+        setQuestions([]);
+        setLoading(false);
+      });
+    return () => { isMounted = false; };
+  }, []);
 
   // Effect: Timed mode countdown
   useEffect(() => {
@@ -112,7 +157,7 @@ function LyricGameApp() {
     return () => clearTimeout(timerRef.current);
   }, [timer, timedActive, gameMode]);
 
-  // Handler: Change mode
+  // Handler: Change mode (and restart/reload questions for scoring fairness)
   // PUBLIC_INTERFACE
   function handleModeSelect(modeKey) {
     setGameMode(modeKey);
@@ -125,14 +170,17 @@ function LyricGameApp() {
     setCorrect(null);
     setAnswered(false);
     setShowHint(false);
+    // Optionally reload questions here if you want a new sample per game mode
   }
 
   // Handler: Submit answer
   // PUBLIC_INTERFACE
   function handleSubmit(answer = null) {
+    if (!questions.length) return;
     let userAns = userInput.trim();
     if (gameMode === "choice" && answer) userAns = answer;
-    const currQ = DEMO_QUESTIONS[current];
+    const currQ = questions[current];
+    if (!currQ) return;
     const isCorrect = userAns.toLowerCase() === currQ.answer.toLowerCase();
     setCorrect(isCorrect);
     if (isCorrect) setScore((s) => s + 1);
@@ -149,21 +197,21 @@ function LyricGameApp() {
   // Handler: Next question
   // PUBLIC_INTERFACE
   function handleNext() {
-    if (current < DEMO_QUESTIONS.length - 1) {
+    if (!questions.length) return;
+    if (current < questions.length - 1) {
       setCurrent((idx) => idx + 1);
       setUserInput("");
       setShowHint(false);
       setCorrect(null);
       setAnswered(false);
     } else if (gameMode === "timed") {
-      setCurrent((idx) => (idx + 1) % DEMO_QUESTIONS.length); // Rotate for timed
+      setCurrent((idx) => (idx + 1) % questions.length); // Rotate for timed
       setUserInput("");
       setShowHint(false);
       setCorrect(null);
       setAnswered(false);
     } else {
-      // End
-      setAnswered(true);
+      setAnswered(true); // End reached
     }
   }
 
@@ -182,7 +230,7 @@ function LyricGameApp() {
     setShowHint(false);
   }
 
-  // Handler: For Instructions button
+  // Handler: Show instructions
   // PUBLIC_INTERFACE
   function handleShowInstructions() {
     setShowInstructions(true);
@@ -204,16 +252,31 @@ function LyricGameApp() {
     alignItems: "center",
     minHeight: 360
   };
-
-  // Mode switcher
+  const floatingHintStyle = {
+    position: "fixed",
+    right: "20px",
+    bottom: "70px",
+    zIndex: 15,
+    background: THEME_COLORS.accent,
+    color: "#fff",
+    border: "none",
+    borderRadius: "50%",
+    fontSize: "2rem",
+    width: "56px",
+    height: "56px",
+    boxShadow: "0 2px 12px rgba(0,0,0,0.13)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+    transition: "background 0.18s"
+  };
   const modeSwitcherStyle = {
     display: "flex",
     gap: "10px",
     justifyContent: "center",
     margin: "1.2rem 0 0.8rem 0"
   };
-
-  // Responsive: mobile container adjust
   const wrapperStyle = {
     minHeight: "100vh",
     background: THEME_COLORS.lightBg,
@@ -221,8 +284,6 @@ function LyricGameApp() {
     flexDirection: "column",
     justifyContent: "flex-start"
   };
-
-  // Score/timer bar style
   const scorebarStyle = {
     width: "100%",
     display: "flex",
@@ -233,8 +294,6 @@ function LyricGameApp() {
     fontWeight: 600,
     fontSize: "1.17rem"
   };
-
-  // Responsive font styling
   const lyricFont = {
     fontSize: "1.32rem",
     margin: "1.5rem 0 1.2rem 0",
@@ -243,11 +302,49 @@ function LyricGameApp() {
     fontWeight: 700
   };
 
+  // Render a message for API error or loading/empty state
+  function renderLoadErrorOrEmpty() {
+    if (loading) return <div style={{ textAlign: "center", margin: "3rem auto" }}><h3>Loading questions…</h3></div>;
+    if (apiError) return (
+      <div style={{ ...cardStyle, color: "#d32f2f" }}>
+        <h3>Unable to load lyric questions.</h3>
+        <div style={{ fontSize: "1.13rem", marginTop: "1.1rem" }}>{apiError}</div>
+        <button
+          style={{
+            marginTop: "1.6em",
+            background: THEME_COLORS.primary,
+            color: "#fff",
+            padding: ".65em 2em",
+            border: "none",
+            borderRadius: "8px",
+            fontWeight: 600,
+            fontSize: "1.02rem"
+          }}
+          onClick={() => window.location.reload()}
+        >Retry</button>
+      </div>
+    );
+    if (noData || !questions.length) return (
+      <div style={cardStyle}>
+        <h3>No lyric questions found from data source.</h3>
+        <p>
+          No data available at this time.<br />
+          <span style={{ fontStyle: "italic", fontSize: ".91em" }}>
+            (For developers: provide a dataset in <b>fetchQuestionsSimulated()</b> or swap with a real API endpoint.)
+          </span>
+        </p>
+      </div>
+    );
+    return null;
+  }
+
   // PUBLIC_INTERFACE
   function renderGameCard() {
-    const q = DEMO_QUESTIONS[current];
-    if (!q) return <h3>Loading...</h3>;
-
+    if (loading || apiError || noData || !questions.length) {
+      return renderLoadErrorOrEmpty();
+    }
+    const q = questions[current];
+    if (!q) return <h3>Loading…</h3>;
     return (
       <div style={cardStyle}>
         <div style={lyricFont} data-testid="lyric">{`"${q.lyric}"`}</div>
@@ -391,7 +488,7 @@ function LyricGameApp() {
               setAnswered(false);
             }}
           >
-            {current === DEMO_QUESTIONS.length - 1 && gameMode !== "timed" ? "Finish" : "Next"}
+            {current === questions.length - 1 && gameMode !== "timed" ? "Finish" : "Next"}
           </button>
         )}
 
@@ -423,10 +520,10 @@ function LyricGameApp() {
     );
   }
 
-  // Responsive floating hint button
   // PUBLIC_INTERFACE
   function renderHintButton() {
-    if (!DEMO_QUESTIONS[current]) return null;
+    if (!questions[current]) return null;
+    if (loading || apiError || noData) return null;
     return (
       <button
         style={floatingHintStyle}
@@ -440,7 +537,6 @@ function LyricGameApp() {
     );
   }
 
-  // Mode Switcher
   // PUBLIC_INTERFACE
   function renderModeSwitcher() {
     return (
@@ -573,6 +669,9 @@ function LyricGameApp() {
             </button>
           ))}
         </div>
+        <p style={{ marginTop: "2em", color: "#755D71", fontSize: ".97em" }}>
+          <b>Note:</b> Data is loaded from a local sample. To plug in a real API for lyrics, edit <code>fetchQuestionsSimulated()</code> in App.js.
+        </p>
       </div>
     );
   }
