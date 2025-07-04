@@ -27,66 +27,128 @@ import "./App.css";
 
 const TMDB_TOKEN =
   process.env.REACT_APP_TMDB_TOKEN ||
-  ""; // <-- See instructions above for setting up your own TMDb API bearer token
+  ""; // Reads from real .env, never hardcoded
 
 const TMDB_API = "https://api.themoviedb.org/3";
 
-// Search for recent/popular Tamil movies
+/**
+ * Fetch a single page of Tamil movies. Throws on error.
+ * @param {number} page
+ * @returns {Promise<Array>}
+ */
 async function fetchTamilMovies(page = 1) {
-  // Query by: with_original_language=ta; sort by popularity/recency; vote count filter for quality
   const url = `${TMDB_API}/discover/movie?with_original_language=ta&sort_by=popularity.desc&vote_count.gte=10&page=${page}`;
   const headers = {
     Authorization: "Bearer " + TMDB_TOKEN,
     "Content-Type": "application/json;charset=utf-8",
   };
-  const res = await fetch(url, { headers });
-  if (!res.ok) throw new Error("TMDb: failed to fetch Tamil movies");
-  const data = await res.json();
-  return data.results || [];
+  try {
+    const res = await fetch(url, { headers });
+    if (!res.ok)
+      throw new Error(
+        `TMDb: failed to fetch Tamil movies (status ${res.status} ${res.statusText})`
+      );
+    const data = await res.json();
+    return data.results || [];
+  } catch (err) {
+    throw new Error(
+      "TMDb: Could not load Tamil movies. " + (err?.message || "")
+    );
+  }
 }
 
-// Fetch full movie credits to get the cast list
+/**
+ * Fetch *all* pages of Tamil movies up to maxPages (deepens coverage)
+ * @param {number} maxPages
+ * @returns {Promise<Array>}
+ */
+async function fetchAllTamilMovies(maxPages = 6) {
+  let all = [];
+  for (let p = 1; p <= maxPages; ++p) {
+    let pageResults = [];
+    try {
+      pageResults = await fetchTamilMovies(p);
+    } catch (e) {
+      // If a fetch fails, continue with those we already have
+      break;
+    }
+    if (!pageResults.length) break;
+    all = all.concat(pageResults);
+  }
+  // Deduplicate by id/title
+  const seen = new Set();
+  all = all.filter((m) => {
+    if (!m.id || !m.title) return false;
+    if (seen.has(m.id)) return false;
+    seen.add(m.id);
+    return !m.adult;
+  });
+  return all;
+}
+
+/**
+ * Fetch full movie credits to get the cast list for a movie.
+ * @param {number|string} movieId
+ * @returns {Promise<Array>}
+ */
 async function fetchMovieCast(movieId) {
   const url = `${TMDB_API}/movie/${movieId}/credits`;
   const headers = {
     Authorization: "Bearer " + TMDB_TOKEN,
     "Content-Type": "application/json;charset=utf-8",
   };
-  const res = await fetch(url, { headers });
-  if (!res.ok) throw new Error("TMDb: failed to fetch cast for movie " + movieId);
-  const data = await res.json();
-  return data.cast || [];
+  try {
+    const res = await fetch(url, { headers });
+    if (!res.ok)
+      throw new Error(
+        `TMDb: failed to fetch cast for movie ${movieId} (status ${res.status})`
+      );
+    const data = await res.json();
+    return data.cast || [];
+  } catch (err) {
+    throw new Error(
+      `TMDb: Could not load cast for movie ${movieId}. ${
+        err?.message || ""
+      }`
+    );
+  }
 }
 
 /**
  * PUBLIC_INTERFACE
  * Loads a pool of random Tamil movies and their cast combinations,
- * Prepares an array of questions in shape:
+ * Prepares an array of questions:
  *    { actors: [name1, name2, ...], answer: movieTitle, choices: [movieTitle, ...] }
  * If error, throws with message.
  */
 async function fetchConnectionQuestions(rounds = 10) {
-  // Fetch several pages for variety if needed
+  // Fetch more pages for better randomization/corpus
   let allMovies = [];
-  for (let i = 1; i <= 2; ++i) {
-    const pageMovies = await fetchTamilMovies(i);
-    allMovies = allMovies.concat(pageMovies);
+  try {
+    allMovies = await fetchAllTamilMovies(6); // fetch 6 pages (usually ~20 per page)
+  } catch (e) {
+    throw new Error("Could not load enough Tamil movies: " + (e?.message || ""));
   }
-  // Filter movies that have enough cast/popularity
-  allMovies = allMovies.filter(m => m.id && m.title && !m.adult);
+  allMovies = allMovies.filter((m) => m.id && m.title && !m.adult);
 
-  // Shuffle and pick random sample for this session
+  if (allMovies.length < rounds + 5)
+    throw new Error(
+      "Not enough Tamil movies found from TMDb – check API key or try again later."
+    );
+
+  // Shuffle for randomness
+  const shuffle = (arr) => arr.sort(() => Math.random() - 0.5);
+
   const questions = [];
   const usedMovieIds = new Set();
 
-  for (let k = 0; k < rounds; ++k) {
-    let tries = 0, movie;
-    do {
-      movie = allMovies[Math.floor(Math.random() * allMovies.length)];
-      tries++;
-    } while (usedMovieIds.has(movie?.id) && tries < 8);
+  let tries = 0;
+  while (questions.length < rounds && tries < rounds * 8) {
+    tries++;
+    const movie =
+      allMovies[Math.floor(Math.random() * allMovies.length)];
+    if (!movie || usedMovieIds.has(movie.id)) continue;
 
-    if (!movie) continue;
     usedMovieIds.add(movie.id);
 
     // For current movie, get cast
@@ -96,33 +158,40 @@ async function fetchConnectionQuestions(rounds = 10) {
     } catch (e) {
       continue;
     }
-    cast = cast.filter(p => !!p.name);
+    cast = Array.isArray(cast) ? cast.filter((p) => !!p.name) : [];
 
-    // Pick 2–3 random main actors (avoid directors/cameos)
-    let mainActors = cast.filter(c => c.known_for_department === "Acting");
+    // Pick 2–3 random actors (focused on 'Acting')
+    let mainActors = cast.filter(
+      (c) => c.known_for_department === "Acting"
+    );
     if (mainActors.length < 2) continue;
+    mainActors = shuffle([...mainActors]);
+    const nActors = Math.random() < 0.40 ? 3 : 2;
+    const actors = mainActors.slice(0, nActors).map((c) => c.name);
 
-    // Shuffle and select 2 or 3 actors
-    mainActors = mainActors.sort(() => Math.random() - 0.5);
-    const nActors = Math.random() < 0.35 ? 3 : 2; // 2 or 3 actors
-    const actors = mainActors.slice(0, nActors).map(c => c.name);
-
-    // Choices: collect answer + 3 incorrect movie titles (different)
+    // Choices: answer + 3 incorrect movie titles
     const incorrect = [];
     while (incorrect.length < 3) {
       const idx = Math.floor(Math.random() * allMovies.length);
       const other = allMovies[idx];
-      if (other.id !== movie.id && !incorrect.some(c => c.id === other.id)) incorrect.push(other);
+      if (other.id !== movie.id && !incorrect.some((c) => c.id === other.id))
+        incorrect.push(other);
     }
-    const choices = [movie.title, ...incorrect.map(m => m.title)].sort(() => Math.random() - 0.5);
+    const choices = shuffle([movie.title, ...incorrect.map((m) => m.title)]);
 
     questions.push({
       actors,
       answer: movie.title,
       choices,
-      movie, // (for details: year, poster, id)
+      movie, // Expose for details
     });
   }
+
+  if (!questions.length)
+    throw new Error(
+      "Could not generate quiz – not enough movie/cast data from TMDb."
+    );
+
   return questions;
 }
 
